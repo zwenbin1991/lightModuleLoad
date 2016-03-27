@@ -88,7 +88,7 @@
         charset: 'utf-8' // 加载模块所使用的字符编码
     };
 
-    /* 模块加载器 */
+    /* 模块加载器通用方法 */
     var moduleLoadGeneralFuncObj = {
 
         //获取当前正在运行script文件的文件名(不带后缀名)
