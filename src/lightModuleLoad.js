@@ -12,12 +12,13 @@
 })(this, function (root) {
     'use strict';
 
-    var protocolExp = /(file:\/*?[a-z]:|http:\/+)/i; // 匹配模块绝对路径协议
+    var protocolExp = /(file:\/*?[a-z]:\/|http:\/+)/i; // 匹配模块绝对路径协议
     var moduleTagExp = /([^/?]*?)(\.(?:css|js))?(\?.*)?$/i; // 匹配模块名、后缀名和其他信息
     var errorTagExp = /(@|at)/i; // 错误信息chrome和ie>8是at，ff和opera是@
     var clearTrimExp = /^\s+|\s+$/g; // 清空开始和结尾空白
     var clearErrorLineAndStartExp = /(:\d+)?:\d+$/; // 清空错误行号和错误字符开始位置
 
+    // 出自underscore.js里的方法
     var hasEnumBug = !{ toString: null }.propertyIsEnumerable('toString'); // ie < 9情况下存在对象遍历不到某些值的bug
     var noEnumProps = [
         'toString', 'valueOf', 'hasOwnProperty',
@@ -81,7 +82,7 @@
         });
     };
 
-    /* 模块加载器的配置对象，可通过开发人员自定义 */
+    /* 模块加载器配置对象，可通过开发人员自定义 */
     var moduleLoadConfig = {
         baseUrl: '', // 模块基础路径
         alias: {}, // 模块别名
@@ -120,24 +121,135 @@
         },
 
         /**
-         * 将模块标识(相对路径)和基础路径合并成真正的模块路径
+         * 将模块标识(相对路径)和基础路径合并成真正的模块路径(不包括模块名和后缀名及其版本信息)
          *
          * @param {String} tag 模块标识
-         * @param {String} baseUrl 基础路径
+         * @param {String} url 路径
          * @return {String}
          * ===============================================
          * 合并规则
-         * (tag = xx/md; baseUrl = aa/bb) => aa/bb/xx/md/
-         * (tag = /xx/md; baseUrl = aa/bb) => aa/xx/md/
-         * (tag = xx/md; baseUrl = http://www.xxoo.com/static/js/) => http://www.xxoo.com/static/js/xx/md/
-         * (tag = /xx/md; baseUrl = http://www.xxoo.com/static/js/) => http://www.xxoo.com/static/xx/md/
+         * (tag = xx/md; url = aa/bb) => aa/bb/xx/md/
+         * (tag = /xx/md; url = aa/bb) => aa/xx/md/
+         * (tag = xx/md; url = http://www.xxoo.com/static/js/) => http://www.xxoo.com/static/js/xx/md/
+         * (tag = /xx/md; url = http://www.xxoo.com/static/js/) => http://www.xxoo.com/static/xx/md/
          * ===============================================
          */
-        mergeRealModulePath: function (tag, baseUrl) {
+        mergeModulePath: function (tag, url) {
             var isRootDir = tag.charAt(0) === '/'; // 模板标识为/的相对路径
-            var isHTTP = protocolExp.test(baseUrl); // 基础路径是否是绝对路径
-            var domain = '';
-        }
-    }
+            var isAbsoluteUrl = protocolExp.test(url); // 基础路径是否是绝对路径
+            var protocol = '', domain = '';
+            var urlDirs, tagDirs;
 
+            if (isAbsoluteUrl) {
+                protocol = RegExp.$1;
+                url = url.slice(protocol.length);
+
+                if (protocol.indexOf('http') >= 0) {
+                    domain = url.slice(protocol.length, url.indexOf('/') + 1);
+                }
+
+                url = isRootDir ? '' : url.slice(domain.length + 1);
+            }
+
+            // 将基础路径url以分隔符/拆分成数组
+            urlDirs = url.split('/');
+            urlDirs.pop();
+
+            // 将模块标识(相对路径)以分隔符/拆分成数组
+            tagDirs = tag.split('/');
+            tagDirs.pop();
+
+            isRootDir && tagDirs.shift();
+
+            for (var i = 0, length = tagDirs.length; i < length; i++) {
+                if (tagDirs[i] === '..') {
+                    urlDirs.pop();
+                } else if (tagDirs[i] !== '.') {
+                    urlDirs.push(tagDirs[i]);
+                }
+            }
+
+            // 将基础路径转化成字符串
+            (urlDirs = (urlDirs.join('/'))) || (urlDirs = urlDirs + '/');
+
+            return protocol + domain + urlDirs;
+        },
+
+        /*
+        * 解析模块标识得到模块名及其后缀，在与baseUrl合并成模块路径，包括模块名和后缀名以及版本信息
+        *
+        * @param {String} tag 模块标识
+        * @param {String} absoluteUrl 绝对路径
+        * @return {String}
+        * ===============================================
+        * 合并规则
+        * (tag = xx/md; absoluteUrl = http://www.xxoo.com/) => [md, http://www.xxoo.com/xx/md.js]
+        * */
+        getRealModulePathByTag: function (tag, absoluteUrl) {
+            var isAbsoluteUrl = protocolExp.test(tag);
+            var moduleTag = tag.match(moduleTagExp);
+            var moduleName = moduleTag[1];
+            var moduleSuffix = moduleTag[2] || '.js';
+            var moduleQueryString = moduleTag[3] || '';
+            var modulePath;
+
+            if (isAbsoluteUrl) {
+                absoluteUrl = tag;
+                tag = '';
+            }
+
+            modulePath = this.mergeModulePath(tag, absoluteUrl);
+
+            return [moduleName, modulePath + moduleName + moduleSuffix + moduleQueryString];
+        }
+    };
+
+    /* 定义模块加载器 */
+    var moduleLoad = {
+
+        module: {},
+
+        /**
+         * 初始化模块加载器，获取data-main、data-baseurl
+         */
+        initialize: function () {
+            var script, appModule, baseUrl;
+            var currentPageUrl = root.location.href;
+
+            if (document.currentScript) { // ie9、10、ff、chrome都支持通过document.currentScript获取当前正在运行的js文件，通过这种方式获取模块加载器
+                script = document.currentScript;
+            } else { // ie6-8
+                script = Array.prototype.slice.call(document.getElementsByTagName('script'), -1)[0];
+            }
+
+            appModule = script.getAttribute('data-main'); // 获取入口模块
+            baseUrl = script.getAttribute('data-baseurl'); // 获取基础路径
+
+            moduleLoadConfig.baseUrl = baseUrl ?
+                moduleLoadGeneralFuncObj.mergeModulePath(baseUrl, currentPageUrl) :
+                currentPageUrl.slice(0, currentPageUrl.lastIndexOf('/') + 1); // 设置模块加载器的baseUrl，如果模块加载器属性节点提供了data-baseurl，就将data-baseurl和当前页面地址合并，反之直接取当前页面路径
+
+            // 如果存在入口模块，则开始加载
+            appModule && exports.use(appModule);
+        }
+    };
+
+    var exports = {
+
+        version: '1.0.0',
+
+        use: function (tags, factory) {
+            typeof tags === 'string' && (tags = [ tags ]);
+
+
+        },
+
+        define: function () {
+
+        }
+    };
+
+    moduleLoad.initialize();
+
+    return exports;
 });
