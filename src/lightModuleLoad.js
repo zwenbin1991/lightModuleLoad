@@ -57,7 +57,7 @@
     // 获取对象key集合
     var nativeKeys = Object.keys || function (object) {
         var hasOwnProperty = Object.prototype.hasOwnProperty;
-        var results = [], each, proto, prop;
+        var results = [], each, proto;
 
         for (var key in object) {
            hasOwnProperty.call(object, key) && results.push(key);
@@ -65,8 +65,8 @@
 
         if (hasEnumBug) {
             proto = object.__proto__ || object.constructor.prototype;
-            each =  forEach(noEnumProps);
-            each(function (prop, i) {
+            each = forEach(noEnumProps);
+            each(function (prop) {
                 !isContains(results, prop) && object[prop] !== proto[prop] && results.push(prop);
             });
         }
@@ -91,7 +91,7 @@
     /* 模块加载器通用方法 */
     var moduleLoadGeneralFuncObj = {
 
-        //获取当前正在运行script文件的文件名(不带后缀名)
+        // 获取当前正在运行script文件的文件名(不带后缀名)
         getCurrentScriptName: function () {
             // 两种情况：
             // ie6-8可以通过script.readyState为interactive来得到当前正在运行的script文件名
@@ -117,6 +117,26 @@
             });
 
             return scriptName.match(moduleTagExp)[1];
+        },
+
+        /**
+         * 将模块标识(相对路径)和基础路径合并成真正的模块路径
+         *
+         * @param {String} tag 模块标识
+         * @param {String} baseUrl 基础路径
+         * @return {String}
+         * ===============================================
+         * 合并规则
+         * (tag = xx/md; baseUrl = aa/bb) => aa/bb/xx/md/
+         * (tag = /xx/md; baseUrl = aa/bb) => aa/xx/md/
+         * (tag = xx/md; baseUrl = http://www.xxoo.com/static/js/) => http://www.xxoo.com/static/js/xx/md/
+         * (tag = /xx/md; baseUrl = http://www.xxoo.com/static/js/) => http://www.xxoo.com/static/xx/md/
+         * ===============================================
+         */
+        mergeRealModulePath: function (tag, baseUrl) {
+            var isRootDir = tag.charAt(0) === '/'; // 模板标识为/的相对路径
+            var isHTTP = protocolExp.test(baseUrl); // 基础路径是否是绝对路径
+            var domain = '';
         }
     }
 
