@@ -201,6 +201,10 @@
             modulePath = this.mergeModulePath(tag, absoluteUrl);
 
             return [moduleName, modulePath + moduleName + moduleSuffix + moduleQueryString];
+        },
+
+        load: function (unloadedModuleCache) {
+            
         }
     };
 
@@ -238,10 +242,42 @@
 
         version: '1.0.0',
 
+        /**
+         * 加载模块（其实就是加载依赖）
+         */
         use: function (tags, factory) {
             typeof tags === 'string' && (tags = [ tags ]);
+            var alias = moduleLoadConfig.alias;
+            var module = moduleLoad.module;
+            var iteratee = forEach(tags);
+            var moduleExports = [];
+            var exports = [];
+            var unloadedModuleCache = [];
+            var tag, result, name, moduleSolid;
 
+            for (var i = 0, length = tags.length; i < length; i++) {
+                tag = tags[i];
+                result = moduleLoadGeneralFuncObj.getRealModulePathByTag(alias[tag] || tag, moduleLoadConfig.baseUrl);
+                name = alias[tag] ? tag : result[0];
+                moduleSolid = module[name];
 
+                // 判断依赖的模块是否全部加载完成，没有哪个模块就加载哪个模块
+                if (!moduleSolid || moduleSolid.status !== 4) {
+                    moduleSolid = module[name] = {};
+                    unloadedModuleCache.push({
+                        name: name,
+                        url: result[1]
+                    })
+                } else {
+                    exports.push(moduleSolid.exports);
+                }
+
+                if (!unloadedModuleCache.length) {
+                    factory && factory.apply(null, exports);
+                } else {
+                    moduleLoadGeneralFuncObj.load(unloadedModuleCache);
+                }
+            }
         },
 
         define: function () {
