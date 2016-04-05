@@ -265,18 +265,19 @@
         /**
          * 加载模块
          *
-         * @param {Array} unloadedCache 未加载信息
+         * @param {Array} unloadedCache 依赖未加载模块信息
          * 说明：
          *       内部结构: {Object} object.name 模块名 object.url 模块真实路径
          *       方法: {Function} implementFactory  针对依赖模块全部加载完成的回调函数，用于加载依赖模块时，当依赖模块加载完成在调用 [可选]
+         * @param {Object} moduleSolid 定义模块对象，如果存在就是需要加载模块的依赖模块，moduleSolid代表是定义模块的模块对象 [可选]
          */
-        load: function (unloadedCache) {
+        load: function (unloadedCache, moduleSolid) {
             var iteratee = each(unloadedCache);
             var self = this;
             var scriptElement;
 
             iteratee(function (msg) {
-                scriptElement = self.getScript(msg.name, msg.url, unloadedCache);
+                scriptElement = self.getScript(msg.name, msg.url, unloadedCache, moduleSolid);
                 headElement.insertBefore(scriptElement, headElement.firstChild);
             });
         },
@@ -286,23 +287,24 @@
          *
          * @param {String} name 模块名
          * @param {String} url 模块真实路径
-         * @param {Array} unloadedCache 未加载信息
+         * @param {Array} unloadedCache 未加载模块信息
          * 说明：
          *       内部结构: {Object} object.name 模块名 object.url 模块真实路径
          *       方法: {Function} implementFactory  针对依赖模块全部加载完成的回调函数，用于加载依赖模块时，当依赖模块加载完成在调用 [可选]
+         * @param {Object} moduleSolid 定义模块对象，如果存在就是需要加载模块的依赖模块，moduleSolid代表是定义模块的模块对象 [可选]
          * @return {HTMLScriptElement}
          */
-        getScript: function (name, url, unloadedCache) {
+        getScript: function (name, url, unloadedCache, moduleSolid) {
             var self = this;
             var loadEvent = isSupportOnLoad ? 'onload' : 'onreadystatechange';
-            var moduleSolid = self.module[name];
+            var depModuleSolid = self.module[name];
             var scriptElement = document.createElement('script');
 
             scriptElement.src = url;
             scriptElement.async = true;
             scriptElement.charset = moduleLoaderConf.charset;
 
-            moduleSolid.url = url;
+            depModuleSolid.url = url;
 
             if (isSupportOnLoad) {
                 scriptElement.onerror = function () {
@@ -316,7 +318,7 @@
                 if (isSupportOnLoad || readyStateExp.test(scriptElement.readyState)) {
                     scriptElement[loadEvent] = null;
                     headElement.removeChild(scriptElement);
-                    self.complete(moduleSolid, unloadedCache);
+                    self.complete(depModuleSolid, unloadedCache, moduleSolid);
                 }
             };
 
@@ -326,22 +328,27 @@
         /**
          * 模块加载完成执行函数
          *
-         * @param {Object} moduleSolid 模块对象
-         * @param {Array} unloadedCache 未加载信息
+         * @param {Object} depModuleSolid 依赖模块对象
+         * @param {Array} unloadedCache 未加载模块信息
          * 说明：
          *       内部结构: {Object} object.name 模块名 object.url 模块真实路径
          *       方法: {Function} implementFactory  针对依赖模块全部加载完成的回调函数，用于加载依赖模块时，当依赖模块加载完成在调用 [可选]
+         * @param {Object} moduleSolid 定义模块对象，如果存在就是需要加载模块的依赖模块，moduleSolid代表是定义模块的模块对象 [可选]
          */
-        complete: function (moduleSolid, unloadedCache) {
-            var length = unloadedCache.length, factory;
+        complete: function (depModuleSolid, unloadedCache, moduleSolid) {
+            var length = unloadedCache.length, factory, moduleExports;
 
-            moduleSolid.state = 4;
+            depModuleSolid.status = 4;
 
             // 所有待加载的模块全部加载完成
             if (!length) {
+                factory = moduleSolid.factory;
+                moduleExports = this.getModuleExports(moduleSolid.deps);
 
+                factory && factory.apply(null, moduleExports);
+            } else {
+                unloadedCache.shift();
             }
-
         },
 
         /**
@@ -350,8 +357,17 @@
          * @param {Object} moduleSolid 模块对象
          */
         fireFactory: function (moduleSolid) {
-            var iteratee = each(moduleSolid.deps || [], 1);
+            var unloadedMsg, moduleExports, deps, factory;
 
+            (deps || (deps = moduleSolid.deps)) && (unloadedMsg = this.getUnloadedMsg(deps));
+
+            if (unloadedMsg.length) {
+                this.load(unloadedMsg);
+                return;
+            }
+
+            moduleExports = this.getModuleExports(deps);
+            factory && factory.apply(null, moduleExports);
         },
 
         traverseTags: function (fn) {
@@ -377,8 +393,11 @@
             }
         },
 
-        getUnloadMsg: moduleLoader.traverseTags(function (moduleSolid, moduleName, moduleUrl, unloadMsg) {
-            if (!moduleSolid || moduleSolid.status !== 4) unloadMsg.push({ name: moduleName, url: moduleUrl });
+        getUnloadedMsg: moduleLoader.traverseTags(function (moduleSolid, moduleName, moduleUrl, unloadMsg) {
+            if (!moduleSolid || moduleSolid.status !== 4) {
+                !moduleSolid && (this.module[moduleName] = {});
+                unloadMsg.push({ name: moduleName, url: moduleUrl });
+            }
         }),
 
         getModuleExports: moduleLoader.traverseTags(function (moduleSolid, moduleName, moduleUrl, moduleExports) {
@@ -434,8 +453,9 @@
         }
 
         moduleSolid.deps = deps;
+        moduleSolid.factory = factory;
 
-        // 处理依赖模块
+        // 触发factory方法，生成exports属性
         moduleLoader.fireFactory(moduleSolid);
     };
 
