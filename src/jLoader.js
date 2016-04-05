@@ -342,7 +342,7 @@
 
             // 所有待加载的模块全部加载完成
             if (!length) {
-                factory = moduleSolid.factory;
+                factory = unloadedCache.implementFactory || moduleSolid.factory;
                 moduleExports = this.getModuleExports(moduleSolid.deps);
 
                 factory && factory.apply(null, moduleExports);
@@ -362,7 +362,7 @@
             (deps || (deps = moduleSolid.deps)) && (unloadedMsg = this.getUnloadedMsg(deps));
 
             if (unloadedMsg.length) {
-                this.load(unloadedMsg);
+                this.load(unloadedMsg, moduleSolid);
                 return;
             }
 
@@ -422,6 +422,7 @@
             return;
         }
 
+        unloadedMsg.implementFactory = factory;
         moduleLoader.load(unloadedMsg);
     };
 
