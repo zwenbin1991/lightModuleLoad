@@ -344,13 +344,46 @@
 
         },
 
-        /*
-        * 触发模块的factory方法，为模块对象增加exports
-        * */
+        /**
+         * 触发模块的factory方法，为模块对象增加exports
+         *
+         * @param {Object} moduleSolid 模块对象
+         */
         fireFactory: function (moduleSolid) {
             var iteratee = each(moduleSolid.deps || [], 1);
 
-        }
+        },
+
+        traverseTags: function (fn) {
+            var alias = moduleLoaderConf.alias;
+            var baseUrl = moduleLoaderConf.baseUrl;
+            var module = this.module;
+            var self = this;
+            var moduleSolid, moduleMsg, moduleName, moduleUrl;
+
+            return function (tags) {
+                var result = [];
+
+                each(tags)(function (tag) {
+                    moduleMsg = self.getModuleNameAndRealPath(alias[tag] || tag, baseUrl);
+                    moduleName = alias[tag] ? tag : moduleMsg[0];
+                    moduleUrl = moduleMsg[1];
+                    moduleSolid = module[moduleName];
+
+                    fn.call(self, moduleSolid, moduleName, moduleUrl, result);
+                });
+
+                return result;
+            }
+        },
+
+        getUnloadMsg: moduleLoader.traverseTags(function (moduleSolid, moduleName, moduleUrl, unloadMsg) {
+            if (!moduleSolid || moduleSolid.status !== 4) unloadMsg.push({ name: moduleName, url: moduleUrl });
+        }),
+
+        getModuleExports: moduleLoader.traverseTags(function (moduleSolid, moduleName, moduleUrl, moduleExports) {
+            if (moduleSolid && moduleSolid.status === 4) moduleExports.push(moduleSolid.exports);
+        })
     };
 
     /**
@@ -362,32 +395,15 @@
     exports.use = function (tags, factory) {
         (typeof tags === 'string') && (tags = [tags]);
 
-        var alias = moduleLoaderConf.alias;
-        var baseUrl = moduleLoaderConf.baseUrl;
-        var module = this.module;
-        var unLoadedCache = [];
-        var moduleExports = [];
-        var iteratee = each(tags);
-        var moduleSolid, moduleMsg, moduleName;
-        
-        iteratee(function (tag) {
-            moduleMsg = moduleLoaderGeneralFn.getModuleNameAndRealPath(alias[tag] || tag, baseUrl);
-            moduleName = alias[tag] ? tag : moduleMsg[0];
-            moduleSolid = module[moduleName];
+        var unloadedMsg = moduleLoader.getUnloadMsg(tags), moduleExports;
 
-            if (moduleSolid && moduleSolid.status === 4) {
-                moduleExports.push(moduleSolid.exports);
-            } else {
-                module[moduleName] = {};
-                unLoadedCache.push({
-                    name: moduleName,
-                    url: moduleMsg[1]
-                });
-                unLoadedCache.implementFactory = factory;
-            }
-        });
+        if (!unloadedMsg.length) {
+            moduleExports = moduleLoader.getModuleExports(tags);
+            factory && factory.apply(null, moduleExports);
+            return;
+        }
 
-        unLoadedCache.length ? moduleLoader.load(unLoadedCache) : factory && factory.apply(null, moduleExports);
+        moduleLoader.load(unloadedMsg);
     };
 
     /**
