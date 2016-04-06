@@ -12,8 +12,8 @@
     'use strict';
 
     var protocolExp = /(http:\/\/|file:\/\/\/[^/]:)/i;
-    var tagExp = /([^\/.]+)(\.js)?(.*)$/i;
-    var stackExp = /[@|at]/i;
+    var tagExp = /([^\/.]+)(\.js)?(\?.*)?$/i;
+    var stackExp = /@|at/i;
     var clearTrimExp = /^\s+|\s+$/;
     var clearErrorLineAndStartChar = /(:\d+)?:\d+$/;
     var readyStateExp = /loaded|complete/i;
@@ -135,6 +135,8 @@
             if (stack) {
                 stack = stack.split(stackExp).pop().replace(clearTrimExp, '');
                 script = stack.replace(clearErrorLineAndStartChar, '');
+
+                return tagExp.test(script) ? RegExp.$1 : '';
             } else {
                 each(headElement.getElementsByTagName('script'), 1)(function (scriptElement) {
                     if (scriptElement.readyState === 'interactive') {
@@ -234,9 +236,9 @@
                 var result = [];
                 var baseUrl = moduleLoaderConf.baseUrl;
                 var module = moduleLoader.module;
-
                 var d = each(tags);
                 d(function (tag) {
+                   // console.log(tag, 'gggg');
                     moduleMsg = self.getModuleNameAndRealPath(alias[tag] || tag, baseUrl);
                     moduleName = alias[tag] ? tag : moduleMsg[0];
                     moduleUrl = moduleMsg[1];
@@ -361,9 +363,9 @@
         complete: function (depModuleSolid, unloadedCache, moduleSolid) {
             var length, factory, moduleExports;
 
-            if (!unloadedCache.implementFactory || !moduleSolid.factory) return;
+            if (!unloadedCache.implementFactory && (!moduleSolid || !moduleSolid.factory)) return;
 
-            this.depModuleNameCache.push(unloadedCache.shift());
+            this.depModuleNameCache.push(unloadedCache.shift().name);
             depModuleSolid.status = 4;
             length = unloadedCache.length;
 

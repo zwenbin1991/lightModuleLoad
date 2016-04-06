@@ -1,3 +1,3 @@
-jLoader.define('a', function (a) {
-    alert(a);
+jLoader.use('a',function (a) {
+    console.log(a);
 })
