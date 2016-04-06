@@ -11,8 +11,8 @@
 })(this, function (root, exports) {
     'use strict';
 
-    var protocolExp = /http:\/\/|file:\/\/\/[^/]:/i;
-    var tagExp = /([^\/]+?)(\.js)?(.*)$/i;
+    var protocolExp = /(http:\/\/|file:\/\/\/[^/]:)/i;
+    var tagExp = /([^\/.]+)(\.js)?(.*)$/i;
     var stackExp = /[@|at]/i;
     var clearTrimExp = /^\s+|\s+$/;
     var clearErrorLineAndStartChar = /(:\d+)?:\d+$/;
@@ -68,7 +68,7 @@
      * 迭代器
      *
      * @param {Array|Object} obj 迭代对象
-     * @param {Number} sign 使用原生forEach还是使用自定义迭代器 [可选]
+     * @param {Number} sign 使用原生forEach还是使用自定义迭代器 [可选] default: 0
      *   说明：0: 使用原生forEach；1: 使用自定义迭代器
      * @return {Function}
      */
@@ -164,7 +164,7 @@
          */
         getModuleBaseDir: function (tag, path) {
             var isRootDir = tag.charAt(0) === '/';
-            var isAbsoluteDir = protocolExp.test(path);
+            var isAbsoluteDir = protocolExp.exec(path);
             var protocol = '';
             var domain = '';
             var tagDirs, pathDirs;
@@ -198,7 +198,7 @@
                 }
             });
 
-            return pathDirs.join('/');
+            return protocol + domain + pathDirs.join('/') + '/';
         },
 
         /**
@@ -210,7 +210,7 @@
          */
         getModuleNameAndRealPath: function (tag, baseUrl) {
             var isAbsolutePath = protocolExp.test(tag);
-            var tagMsg = tagExp.match(tag);
+            var tagMsg = tag.match(tagExp);
             var moduleName = tagMsg[1];
             var suffix = tagMsg[2] || '.js';
             var extra = tagMsg[3] || '';
@@ -223,6 +223,29 @@
             var baseUrl = this.getModuleBaseDir(tag, baseUrl);
 
             return [moduleName, baseUrl + moduleName + suffix + extra];
+        },
+
+        traverseTags: function (fn) {
+            var alias = moduleLoaderConf.alias;
+            var self = this;
+            var moduleSolid, moduleMsg, moduleName, moduleUrl;
+
+            return function (tags) {
+                var result = [];
+                var baseUrl = moduleLoaderConf.baseUrl;
+                var module = moduleLoader.module;
+
+                var d = each(tags);
+                d(function (tag) {
+                    moduleMsg = self.getModuleNameAndRealPath(alias[tag] || tag, baseUrl);
+                    moduleName = alias[tag] ? tag : moduleMsg[0];
+                    moduleUrl = moduleMsg[1];
+                    moduleSolid = module[moduleName];
+                    fn.call(self, moduleSolid, moduleName, moduleUrl, result);
+                });
+
+                return result;
+            }
         }
     };
 
@@ -231,7 +254,7 @@
 
         module: {},
 
-        depModuleCache: [],
+        depModuleNameCache: [],
 
         /**
          * 模块加载器内部初始化
@@ -250,7 +273,7 @@
             moduleLoaderConf.baseUrl = baseUrl ? moduleLoaderGeneralFn.getModuleBaseDir(baseUrl, currentPageUrl) : currentPageUrl.slice(0, currentPageUrl.lastIndexOf('/') + 1);
 
             // 加载main模块
-            main && this.use(main);
+            main && exports.use(main);
         },
 
         /**
@@ -332,22 +355,24 @@
          * @param {Array} unloadedCache 未加载模块信息
          * 说明：
          *       内部结构: {Object} object.name 模块名 object.url 模块真实路径
-         *       方法: {Function} implementFactory  针对依赖模块全部加载完成的回调函数，用于加载依赖模块时，当依赖模块加载完成在调用 [可选]
+         *       方法: {Function} implementFactory  针对依赖模块全部加载完成的回调函数，用于加载依赖模块时，当依赖模块加载完成在调用
          * @param {Object} moduleSolid 定义模块对象，如果存在就是需要加载模块的依赖模块，moduleSolid代表是定义模块的模块对象 [可选]
          */
         complete: function (depModuleSolid, unloadedCache, moduleSolid) {
-            var length = unloadedCache.length, factory, moduleExports;
+            var length, factory, moduleExports;
 
+            if (!unloadedCache.implementFactory || !moduleSolid.factory) return;
+
+            this.depModuleNameCache.push(unloadedCache.shift());
             depModuleSolid.status = 4;
+            length = unloadedCache.length;
 
             // 所有待加载的模块全部加载完成
             if (!length) {
                 factory = unloadedCache.implementFactory || moduleSolid.factory;
-                moduleExports = this.getModuleExports(moduleSolid.deps);
-
+                moduleExports = this.getModuleExports(moduleSolid ? moduleSolid.deps : this.depModuleNameCache);
+                this.depModuleNameCache = [];
                 factory && factory.apply(null, moduleExports);
-            } else {
-                unloadedCache.shift();
             }
         },
 
@@ -357,50 +382,27 @@
          * @param {Object} moduleSolid 模块对象
          */
         fireFactory: function (moduleSolid) {
-            var unloadedMsg, moduleExports, deps, factory;
+            var unloadedMsg, moduleExports, deps;
 
             (deps || (deps = moduleSolid.deps)) && (unloadedMsg = this.getUnloadedMsg(deps));
 
-            if (unloadedMsg.length) {
+            if (unloadedMsg && unloadedMsg.length) {
                 this.load(unloadedMsg, moduleSolid);
                 return;
             }
 
-            moduleExports = this.getModuleExports(deps);
-            factory && factory.apply(null, moduleExports);
+            moduleExports = deps ? this.getModuleExports(deps) : [];
+            moduleSolid.factory.apply(null, moduleExports);
         },
 
-        traverseTags: function (fn) {
-            var alias = moduleLoaderConf.alias;
-            var baseUrl = moduleLoaderConf.baseUrl;
-            var module = this.module;
-            var self = this;
-            var moduleSolid, moduleMsg, moduleName, moduleUrl;
-
-            return function (tags) {
-                var result = [];
-
-                each(tags)(function (tag) {
-                    moduleMsg = self.getModuleNameAndRealPath(alias[tag] || tag, baseUrl);
-                    moduleName = alias[tag] ? tag : moduleMsg[0];
-                    moduleUrl = moduleMsg[1];
-                    moduleSolid = module[moduleName];
-
-                    fn.call(self, moduleSolid, moduleName, moduleUrl, result);
-                });
-
-                return result;
-            }
-        },
-
-        getUnloadedMsg: moduleLoader.traverseTags(function (moduleSolid, moduleName, moduleUrl, unloadMsg) {
+        getUnloadedMsg: moduleLoaderGeneralFn.traverseTags(function (moduleSolid, moduleName, moduleUrl, unloadMsg) {
             if (!moduleSolid || moduleSolid.status !== 4) {
-                !moduleSolid && (this.module[moduleName] = {});
+                !moduleSolid && (moduleLoader.module[moduleName] = {});
                 unloadMsg.push({ name: moduleName, url: moduleUrl });
             }
         }),
 
-        getModuleExports: moduleLoader.traverseTags(function (moduleSolid, moduleName, moduleUrl, moduleExports) {
+        getModuleExports: moduleLoaderGeneralFn.traverseTags(function (moduleSolid, moduleName, moduleUrl, moduleExports) {
             if (moduleSolid && moduleSolid.status === 4) moduleExports.push(moduleSolid.exports);
         })
     };
@@ -414,7 +416,7 @@
     exports.use = function (tags, factory) {
         (typeof tags === 'string') && (tags = [tags]);
 
-        var unloadedMsg = moduleLoader.getUnloadMsg(tags), moduleExports;
+        var unloadedMsg = moduleLoader.getUnloadedMsg(tags), moduleExports;
 
         if (!unloadedMsg.length) {
             moduleExports = moduleLoader.getModuleExports(tags);
@@ -453,12 +455,18 @@
             deps = void 0;
         }
 
+        if (!moduleSolid) {
+            moduleSolid = module[tag] = {};
+        }
+
         moduleSolid.deps = deps;
         moduleSolid.factory = factory;
 
         // 触发factory方法，生成exports属性
         moduleLoader.fireFactory(moduleSolid);
     };
+
+    moduleLoader.initialize();
 
     return exports;
 });
