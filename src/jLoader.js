@@ -236,9 +236,8 @@
                 var result = [];
                 var baseUrl = moduleLoaderConf.baseUrl;
                 var module = moduleLoader.module;
-                var d = each(tags);
-                d(function (tag) {
-                   // console.log(tag, 'gggg');
+
+                each(tags)(function (tag) {
                     moduleMsg = self.getModuleNameAndRealPath(alias[tag] || tag, baseUrl);
                     moduleName = alias[tag] ? tag : moduleMsg[0];
                     moduleUrl = moduleMsg[1];
@@ -322,14 +321,14 @@
         getScript: function (name, url, unloadedCache, moduleSolid) {
             var self = this;
             var loadEvent = isSupportOnLoad ? 'onload' : 'onreadystatechange';
-            var depModuleSolid = self.module[name];
             var scriptElement = document.createElement('script');
+            var module = self.module, depModuleSolid;
 
             scriptElement.src = url;
             scriptElement.async = true;
             scriptElement.charset = moduleLoaderConf.charset;
 
-            depModuleSolid.url = url;
+
 
             if (isSupportOnLoad) {
                 scriptElement.onerror = function () {
@@ -340,6 +339,9 @@
             }
 
             scriptElement[loadEvent] = function () {
+                depModuleSolid = module[name];
+                depModuleSolid.url = url;
+
                 if (isSupportOnLoad || readyStateExp.test(scriptElement.readyState)) {
                     scriptElement[loadEvent] = null;
                     headElement.removeChild(scriptElement);
@@ -394,7 +396,7 @@
             }
 
             moduleExports = deps ? this.getModuleExports(deps) : [];
-            moduleSolid.factory.apply(null, moduleExports);
+            moduleSolid.exports = moduleSolid.factory.apply(null, moduleExports);
         },
 
         getUnloadedMsg: moduleLoaderGeneralFn.traverseTags(function (moduleSolid, moduleName, moduleUrl, unloadMsg) {

@@ -1,3 +1,5 @@
 jLoader.define(function () {
-    return 'a';
+    return {
+        name: 'my name is 挖掘机'
+    };
 });
