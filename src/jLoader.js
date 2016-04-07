@@ -7,7 +7,7 @@
  * @version 1.0.0
  */
 ;(function (root, factory) {
-    root.jLoader = factory(this, {})
+    root.jLoader = factory(root, {})
 })(this, function (root, exports) {
     'use strict';
 
